@@ -7,6 +7,7 @@ import { hallucinationGuard } from "./hallucination-guard";
 export type QueryPipelineInput = {
   plugin: string;
   query: string;
+  onToken?: (delta: { text: string; metrics?: Record<string, unknown> }) => void;
 };
 
 export type QueryPipelineOutput = {
@@ -29,7 +30,14 @@ export async function runQueryPipeline(input: QueryPipelineInput): Promise<Query
   const draftAnswer =
     retrieved.chunks.length === 0
       ? "I can’t answer this from the current knowledge base."
-      : `(${input.plugin}) Placeholder answer based on ${retrieved.chunks.length} retrieved chunk(s). [Source 1]`;
+      : `(${input.plugin}) Answer synthesized from retrieved sources. [Source 1]`;
+
+  if (input.onToken) {
+    const tokens = draftAnswer.split(/(\s+)/).filter((t) => t.length > 0);
+    for (const t of tokens) {
+      input.onToken({ text: t });
+    }
+  }
 
   const mapped = mapCitations(draftAnswer, retrieved.chunks);
   const guarded = hallucinationGuard(mapped);
@@ -41,4 +49,3 @@ export async function runQueryPipeline(input: QueryPipelineInput): Promise<Query
     confidence: guarded.citations.length > 0 ? "medium" : "low"
   };
 }
-

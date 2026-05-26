@@ -11,7 +11,11 @@ export default function HomePage() {
           POST <code className="rounded bg-neutral-100 px-1">/api/v1/query</code>
         </p>
       </div>
+      <div className="mt-4 text-sm">
+        <a className="underline" href="/sandbox">
+          Open sandbox
+        </a>
+      </div>
     </main>
   );
 }
-

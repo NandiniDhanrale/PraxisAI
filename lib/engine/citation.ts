@@ -10,4 +10,3 @@ export function mapCitations(answer: string, chunks: RetrievedChunk[]) {
 
   return { answer, citations };
 }
-

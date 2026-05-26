@@ -20,11 +20,39 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await runQueryPipeline({
-    plugin: parsed.data.plugin,
-    query: parsed.data.query
-  });
+  if (parsed.data.stream) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (event: string, data: unknown) => {
+          controller.enqueue(encoder.encode(`event: ${event}\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
+        try {
+          send("meta", { plugin: parsed.data.plugin });
+          const result = await runQueryPipeline({
+            plugin: parsed.data.plugin,
+            query: parsed.data.query,
+            onToken: (delta) => send("token", delta)
+          });
+          send("final", result);
+        } catch (err) {
+          send("error", { message: err instanceof Error ? err.message : "Unknown error" });
+        } finally {
+          controller.close();
+        }
+      }
+    });
 
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive"
+      }
+    });
+  }
+
+  const result = await runQueryPipeline({ plugin: parsed.data.plugin, query: parsed.data.query });
   return NextResponse.json(result);
 }
-
