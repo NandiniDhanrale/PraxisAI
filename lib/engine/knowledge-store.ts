@@ -45,12 +45,13 @@ export async function upsertDocument(args: {
   fileName: string;
   text: string;
   chunkSize?: number;
+  overlap?: number;
 }): Promise<StoredDocument> {
   const plugin = safeSlug(args.plugin);
   await ensureDirs(plugin);
 
   const documentId = crypto.createHash("sha256").update(`${args.fileName}:${args.text}`).digest("hex").slice(0, 24);
-  const chunks = chunkText({ text: args.text, chunkSize: args.chunkSize });
+  const chunks = chunkText({ text: args.text, chunkSize: args.chunkSize, overlap: args.overlap });
 
   const storedChunks: StoredChunk[] = [];
   for (const c of chunks) {
@@ -105,4 +106,3 @@ export async function loadAllChunks(plugin: string): Promise<Array<StoredChunk &
   }
   return chunks;
 }
-
