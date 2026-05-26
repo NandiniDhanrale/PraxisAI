@@ -1,20 +1,19 @@
-export type LexicQueryRequest = {
+export type PraxisQueryRequest = {
   plugin: string;
   query: string;
   stream?: boolean;
 };
 
-export type LexicCitation = {
+export type PraxisCitation = {
   document: string;
   page?: number | null;
   section?: string | null;
   excerpt?: string | null;
 };
 
-export type LexicQueryResponse = {
+export type PraxisQueryResponse = {
   answer: string;
-  citations: LexicCitation[];
+  citations: PraxisCitation[];
   decisionPath: Array<{ step: number; node: string; label: string; result: string }>;
   confidence: "low" | "medium" | "high";
 };
-

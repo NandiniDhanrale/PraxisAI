@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "sdk:build": "npm -w @lexic/sdk run build"
+    "sdk:build": "npm -w @praxisai/sdk run build"
   },
   "dependencies": {
     "next": "^15.3.0",

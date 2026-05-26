@@ -84,7 +84,7 @@ export default function SandboxPage() {
 
   return (
     <main className="mx-auto max-w-5xl p-8">
-      <h1 className="text-2xl font-semibold">Lexic Sandbox</h1>
+      <h1 className="text-2xl font-semibold">PraxisAI Sandbox</h1>
       <p className="mt-2 text-sm text-neutral-700">
         Upload a text document into a plugin knowledge base, then query it with SSE streaming.
       </p>
@@ -129,4 +129,3 @@ export default function SandboxPage() {
     </main>
   );
 }
-

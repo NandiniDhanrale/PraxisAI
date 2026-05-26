@@ -1,4 +1,4 @@
-# PraxisAI (Lexic)
+# PraxisAI
 
 Local dev:
 

@@ -1,7 +1,7 @@
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Lexic</h1>
+      <h1 className="text-3xl font-semibold tracking-tight">PraxisAI</h1>
       <p className="mt-3 text-neutral-700">
         Turn a generalist AI into a verified specialist in seconds.
       </p>

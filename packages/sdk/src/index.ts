@@ -1,20 +1,20 @@
-import type { LexicQueryRequest, LexicQueryResponse } from "./types";
+import type { PraxisQueryRequest, PraxisQueryResponse } from "./types";
 
-export type LexicClientOptions = {
+export type PraxisClientOptions = {
   baseUrl: string;
   apiKey?: string;
 };
 
-export class LexicClient {
+export class PraxisClient {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
 
-  constructor(opts: LexicClientOptions) {
+  constructor(opts: PraxisClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.apiKey = opts.apiKey;
   }
 
-  async query(req: LexicQueryRequest): Promise<LexicQueryResponse> {
+  async query(req: PraxisQueryRequest): Promise<PraxisQueryResponse> {
     const res = await fetch(`${this.baseUrl}/api/v1/query`, {
       method: "POST",
       headers: {
@@ -25,17 +25,17 @@ export class LexicClient {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Lexic query failed (${res.status}): ${text}`);
+      throw new Error(`PraxisAI query failed (${res.status}): ${text}`);
     }
-    return (await res.json()) as LexicQueryResponse;
+    return (await res.json()) as PraxisQueryResponse;
   }
 
   async queryStream(
-    req: Omit<LexicQueryRequest, "stream">,
+    req: Omit<PraxisQueryRequest, "stream">,
     handlers: {
       onMeta?: (meta: unknown) => void;
       onToken?: (delta: { text: string; metrics?: Record<string, unknown> }) => void;
-      onFinal?: (final: LexicQueryResponse) => void;
+      onFinal?: (final: PraxisQueryResponse) => void;
       onError?: (err: { message: string }) => void;
     }
   ) {
@@ -50,7 +50,7 @@ export class LexicClient {
     });
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Lexic queryStream failed (${res.status}): ${text}`);
+      throw new Error(`PraxisAI queryStream failed (${res.status}): ${text}`);
     }
 
     const reader = res.body.getReader();
@@ -64,7 +64,7 @@ export class LexicClient {
       const parsed = JSON.parse(dataStr) as any;
       if (evt === "meta") handlers.onMeta?.(parsed);
       else if (evt === "token") handlers.onToken?.(parsed);
-      else if (evt === "final") handlers.onFinal?.(parsed as LexicQueryResponse);
+      else if (evt === "final") handlers.onFinal?.(parsed as PraxisQueryResponse);
       else if (evt === "error") handlers.onError?.(parsed);
     };
 
