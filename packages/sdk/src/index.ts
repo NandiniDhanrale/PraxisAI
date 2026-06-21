@@ -14,13 +14,18 @@ export class PraxisClient {
     this.apiKey = opts.apiKey;
   }
 
+  private headers(extra?: Record<string, string>) {
+    return {
+      "content-type": "application/json",
+      ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+      ...extra
+    };
+  }
+
   async query(req: PraxisQueryRequest): Promise<PraxisQueryResponse> {
     const res = await fetch(`${this.baseUrl}/api/v1/query`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {})
-      },
+      headers: this.headers(),
       body: JSON.stringify(req)
     });
     if (!res.ok) {
@@ -41,11 +46,7 @@ export class PraxisClient {
   ) {
     const res = await fetch(`${this.baseUrl}/api/v1/query`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "text/event-stream",
-        ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {})
-      },
+      headers: this.headers({ accept: "text/event-stream" }),
       body: JSON.stringify({ ...req, stream: true })
     });
     if (!res.ok || !res.body) {
@@ -88,6 +89,48 @@ export class PraxisClient {
         emitEvent(evt, data);
       }
     }
+  }
+
+  async collaborate(req: {
+    query: string;
+    experts: string[];
+    mode: "debate" | "consensus" | "review";
+    maxRounds?: number;
+  }) {
+    const res = await fetch(`${this.baseUrl}/api/v1/collaborate`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(req)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`PraxisAI collaborate failed (${res.status}): ${text}`);
+    }
+    return await res.json();
+  }
+
+  async uploadDocument(plugin: string, fileName: string, text: string) {
+    const res = await fetch(`${this.baseUrl}/api/plugins/${encodeURIComponent(plugin)}/documents`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ fileName, text })
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      throw new Error(`PraxisAI uploadDocument failed (${res.status}): ${err}`);
+    }
+    return await res.json();
+  }
+
+  async listDocuments(plugin: string) {
+    const res = await fetch(`${this.baseUrl}/api/plugins/${encodeURIComponent(plugin)}/documents`, {
+      headers: this.headers()
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      throw new Error(`PraxisAI listDocuments failed (${res.status}): ${err}`);
+    }
+    return await res.json();
   }
 }
 

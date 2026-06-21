@@ -13,7 +13,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ plugin: string
     return NextResponse.json({ error: "Missing `file` field" }, { status: 400 });
   }
 
-  // `pdf-parse` is CJS; import dynamically to avoid bundler edge cases.
   const pdfParse = (await import("pdf-parse")).default as any;
 
   const buf = Buffer.from(await file.arrayBuffer());
@@ -28,9 +27,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ plugin: string
     fileName: file.name || "document.pdf",
     text,
     chunkSize: 1500,
-    overlap: 200
+    overlap: 200,
+    fileType: "pdf"
   });
 
   return NextResponse.json({ ok: true, documentId: doc.documentId, chunks: doc.chunks.length });
 }
-

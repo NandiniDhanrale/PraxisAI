@@ -11,20 +11,37 @@ export function chunkText(args: { text: string; chunkSize?: number; overlap?: nu
   const text = (args.text ?? "").replace(/\r\n/g, "\n").trim();
   if (!text) return [];
 
+  const paragraphs = text.split(/\n\s*\n/);
   const chunks: Chunk[] = [];
+  let currentContent = "";
   let offset = 0;
-  while (offset < text.length) {
-    const end = Math.min(text.length, offset + chunkSize);
-    const slice = text.slice(offset, end);
+
+  for (const para of paragraphs) {
+    if (currentContent.length + para.length > chunkSize && currentContent.length > 0) {
+      const idx = chunks.length;
+      chunks.push({
+        chunkId: `chunk-${idx}-${offset}`,
+        content: currentContent.trim(),
+        page: null,
+        section: null
+      });
+      offset += currentContent.length;
+      const overlapText = currentContent.slice(-overlap);
+      currentContent = overlapText + "\n\n" + para;
+    } else {
+      currentContent = currentContent ? currentContent + "\n\n" + para : para;
+    }
+  }
+
+  if (currentContent.trim().length > 0) {
     const idx = chunks.length;
     chunks.push({
       chunkId: `chunk-${idx}-${offset}`,
-      content: slice.trim(),
+      content: currentContent.trim(),
       page: null,
       section: null
     });
-    if (end >= text.length) break;
-    offset += chunkSize - overlap;
   }
-  return chunks.filter((c) => c.content.length > 0);
+
+  return chunks;
 }

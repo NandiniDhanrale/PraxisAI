@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 const QueryBodySchema = z.object({
   plugin: z.string().min(1),
   query: z.string().min(1),
-  stream: z.boolean().optional()
+  stream: z.boolean().optional(),
+  parameters: z.record(z.string()).optional()
 });
 
 export async function POST(req: Request) {
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
           const result = await runQueryPipeline({
             plugin: parsed.data.plugin,
             query: parsed.data.query,
+            parameters: parsed.data.parameters,
             onToken: (delta) => send("token", delta)
           });
           send("final", result);
@@ -53,6 +55,10 @@ export async function POST(req: Request) {
     });
   }
 
-  const result = await runQueryPipeline({ plugin: parsed.data.plugin, query: parsed.data.query });
+  const result = await runQueryPipeline({
+    plugin: parsed.data.plugin,
+    query: parsed.data.query,
+    parameters: parsed.data.parameters
+  });
   return NextResponse.json(result);
 }

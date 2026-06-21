@@ -11,17 +11,24 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "sdk:build": "npm -w @praxisai/sdk run build"
+    "sdk:build": "npm -w @praxisai/sdk run build",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@xyflow/react": "^12.0.0",
     "drizzle-orm": "^0.44.0",
+    "lucide-react": "^0.400.0",
     "next": "^15.3.0",
     "openai": "^5.0.0",
     "pdf-parse": "^1.1.1",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zod": "^3.25.0"
+    "recharts": "^2.15.0",
+    "zod": "^3.25.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -6,6 +6,7 @@ export type RetrievedChunk = {
   content: string;
   page?: number | null;
   section?: string | null;
+  score: number;
 };
 
 export async function retrieveChunks(args: {
@@ -30,7 +31,8 @@ export async function retrieveChunks(args: {
       document: r.chunk.fileName,
       content: r.chunk.content,
       page: r.chunk.page ?? null,
-      section: r.chunk.section ?? null
+      section: r.chunk.section ?? null,
+      score: r.score
     }))
   };
 }

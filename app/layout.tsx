@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "PraxisAI",
+  title: "PraxisAI - Expert Brains for AI Agents",
   description: "Turn a generalist AI into a verified specialist in seconds."
 };
 
