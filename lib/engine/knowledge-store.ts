@@ -49,39 +49,25 @@ export type StoredQueryLog = {
   createdAt: string;
 };
 
-function dataDir() {
-  return path.join(process.cwd(), "data");
-}
+// In-memory store that persists across requests within the same serverless instance
+// Falls back to filesystem for persistence when available
+const memoryStore = {
+  documents: new Map<string, StoredDocument[]>(),
+  trees: new Map<string, TreeData>(),
+  plugins: new Map<string, any[]>(),
+  apiKeys: new Map<string, StoredApiKey[]>(),
+  queryLogs: new Map<string, StoredQueryLog[]>()
+};
 
-function pluginDir(plugin: string) {
-  return path.join(dataDir(), "plugins", safeSlug(plugin));
-}
-
-function docsDir(plugin: string) {
-  return path.join(pluginDir(plugin), "docs");
-}
-
-function treeFile(plugin: string) {
-  return path.join(pluginDir(plugin), "tree.json");
-}
-
-function logsDir() {
-  return path.join(dataDir(), "logs");
-}
-
-function keysDir() {
-  return path.join(dataDir(), "keys");
-}
-
-async function ensureDirs(dirs: string[]) {
-  for (const d of dirs) {
-    await fs.mkdir(d, { recursive: true });
-  }
-}
-
-export function safeSlug(input: string) {
+function safeSlug(input: string) {
   return input.toLowerCase().replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-").slice(0, 80);
 }
+
+function docsKey(plugin: string) {
+  return safeSlug(plugin);
+}
+
+// ---- Documents ----
 
 export async function upsertDocument(args: {
   plugin: string;
@@ -92,9 +78,7 @@ export async function upsertDocument(args: {
   fileType?: string;
 }): Promise<StoredDocument> {
   const plugin = safeSlug(args.plugin);
-  await ensureDirs([docsDir(plugin)]);
-
-  const documentId = crypto.createHash("sha256").update(`${args.fileName}:${args.text}`).digest("hex").slice(0, 24);
+  const documentId = crypto.createHash("sha256").update(`${args.fileName}:${args.text}:${Date.now()}`).digest("hex").slice(0, 24);
   const chunks = chunkText({ text: args.text, chunkSize: args.chunkSize, overlap: args.overlap });
 
   const storedChunks: StoredChunk[] = [];
@@ -118,145 +102,171 @@ export async function upsertDocument(args: {
     chunks: storedChunks
   };
 
-  await fs.writeFile(path.join(docsDir(plugin), `${documentId}.json`), JSON.stringify(doc, null, 2), "utf8");
+  // Store in memory
+  const existing = memoryStore.documents.get(plugin) ?? [];
+  // Replace if same filename exists
+  const filtered = existing.filter((d) => d.fileName !== args.fileName);
+  filtered.push(doc);
+  memoryStore.documents.set(plugin, filtered);
+
+  // Also try filesystem for persistence
+  try {
+    const dir = path.join(process.cwd(), "data", "plugins", plugin, "docs");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, `${documentId}.json`), JSON.stringify(doc, null, 2), "utf8");
+  } catch {}
+
   return doc;
 }
 
 export async function deleteDocument(plugin: string, documentId: string): Promise<boolean> {
   const p = safeSlug(plugin);
-  const filePath = path.join(docsDir(p), `${documentId}.json`);
+  const existing = memoryStore.documents.get(p) ?? [];
+  const filtered = existing.filter((d) => d.documentId !== documentId);
+  memoryStore.documents.set(p, filtered);
   try {
-    await fs.unlink(filePath);
-    return true;
-  } catch {
-    return false;
-  }
+    await fs.unlink(path.join(process.cwd(), "data", "plugins", p, "docs", `${documentId}.json`));
+  } catch {}
+  return true;
 }
 
 export async function listDocuments(plugin: string): Promise<Array<Pick<StoredDocument, "documentId" | "fileName" | "fileType" | "createdAt">>> {
-  const p = safeSlug(plugin);
-  await ensureDirs([docsDir(p)]);
+  const p = docsKey(plugin);
+
+  // Check memory first
+  let docs = memoryStore.documents.get(p);
+  if (docs && docs.length > 0) {
+    return docs.map((d) => ({ documentId: d.documentId, fileName: d.fileName, fileType: d.fileType, createdAt: d.createdAt }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  // Try loading from filesystem
   try {
-    const files = await fs.readdir(docsDir(p));
-    const docs: Array<Pick<StoredDocument, "documentId" | "fileName" | "fileType" | "createdAt">> = [];
+    const dir = path.join(process.cwd(), "data", "plugins", p, "docs");
+    const files = await fs.readdir(dir);
+    docs = [];
     for (const f of files) {
       if (!f.endsWith(".json")) continue;
-      const raw = await fs.readFile(path.join(docsDir(p), f), "utf8");
+      const raw = await fs.readFile(path.join(dir, f), "utf8");
       const parsed = JSON.parse(raw) as StoredDocument;
-      docs.push({ documentId: parsed.documentId, fileName: parsed.fileName, fileType: parsed.fileType ?? "text", createdAt: parsed.createdAt });
+      docs.push(parsed);
     }
-    return docs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    memoryStore.documents.set(p, docs);
+    return docs.map((d) => ({ documentId: d.documentId, fileName: d.fileName, fileType: d.fileType, createdAt: d.createdAt }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   } catch {
     return [];
   }
 }
 
 export async function loadAllChunks(plugin: string): Promise<Array<StoredChunk & { documentId: string; fileName: string }>> {
-  const p = safeSlug(plugin);
-  await ensureDirs([docsDir(p)]);
-  try {
-    const files = await fs.readdir(docsDir(p));
-    const chunks: Array<StoredChunk & { documentId: string; fileName: string }> = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      const raw = await fs.readFile(path.join(docsDir(p), f), "utf8");
-      const parsed = JSON.parse(raw) as StoredDocument;
-      for (const c of parsed.chunks) {
-        chunks.push({ ...c, documentId: parsed.documentId, fileName: parsed.fileName });
+  const p = docsKey(plugin);
+
+  // Check memory first
+  let docs = memoryStore.documents.get(p);
+  if (!docs || docs.length === 0) {
+    // Try loading from filesystem
+    try {
+      const dir = path.join(process.cwd(), "data", "plugins", p, "docs");
+      const files = await fs.readdir(dir);
+      docs = [];
+      for (const f of files) {
+        if (!f.endsWith(".json")) continue;
+        const raw = await fs.readFile(path.join(dir, f), "utf8");
+        docs.push(JSON.parse(raw) as StoredDocument);
       }
+      memoryStore.documents.set(p, docs);
+    } catch {
+      return [];
     }
-    return chunks;
-  } catch {
-    return [];
   }
+
+  if (!docs) return [];
+
+  const chunks: Array<StoredChunk & { documentId: string; fileName: string }> = [];
+  for (const doc of docs) {
+    for (const c of doc.chunks) {
+      chunks.push({ ...c, documentId: doc.documentId, fileName: doc.fileName });
+    }
+  }
+  return chunks;
 }
+
+// ---- Decision Trees ----
 
 export async function saveDecisionTree(plugin: string, treeData: TreeData): Promise<void> {
   const p = safeSlug(plugin);
-  await ensureDirs([pluginDir(p)]);
-  await fs.writeFile(treeFile(p), JSON.stringify(treeData, null, 2), "utf8");
+  memoryStore.trees.set(p, treeData);
+  try {
+    const dir = path.join(process.cwd(), "data", "plugins", p);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "tree.json"), JSON.stringify(treeData, null, 2), "utf8");
+  } catch {}
 }
 
 export async function loadDecisionTree(plugin: string): Promise<TreeData | null> {
   const p = safeSlug(plugin);
+  const mem = memoryStore.trees.get(p);
+  if (mem) return mem;
   try {
-    const raw = await fs.readFile(treeFile(p), "utf8");
-    return JSON.parse(raw) as TreeData;
+    const raw = await fs.readFile(path.join(process.cwd(), "data", "plugins", p, "tree.json"), "utf8");
+    const tree = JSON.parse(raw) as TreeData;
+    memoryStore.trees.set(p, tree);
+    return tree;
   } catch {
     return null;
   }
 }
 
+// ---- Query Logs ----
+
 export async function logQuery(entry: Omit<StoredQueryLog, "id" | "createdAt">): Promise<void> {
-  await ensureDirs([logsDir()]);
   const log: StoredQueryLog = {
     ...entry,
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString()
   };
-  const filePath = path.join(logsDir(), `${log.id}.json`);
-  await fs.writeFile(filePath, JSON.stringify(log, null, 2), "utf8");
+  const existing = memoryStore.queryLogs.get("global") ?? [];
+  existing.unshift(log);
+  if (existing.length > 200) existing.length = 200;
+  memoryStore.queryLogs.set("global", existing);
 }
 
 export async function getQueryLogs(plugin?: string, limit = 50): Promise<StoredQueryLog[]> {
-  await ensureDirs([logsDir()]);
-  try {
-    const files = await fs.readdir(logsDir());
-    const logs: StoredQueryLog[] = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      const raw = await fs.readFile(path.join(logsDir(), f), "utf8");
-      const parsed = JSON.parse(raw) as StoredQueryLog;
-      if (!plugin || parsed.pluginId === plugin) {
-        logs.push(parsed);
-      }
-    }
-    return logs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, limit);
-  } catch {
-    return [];
-  }
+  const all = memoryStore.queryLogs.get("global") ?? [];
+  const filtered = plugin ? all.filter((l) => l.pluginId === plugin) : all;
+  return filtered.slice(0, limit);
 }
 
+// ---- API Keys ----
+
 export async function saveApiKey(key: StoredApiKey): Promise<void> {
-  await ensureDirs([keysDir()]);
-  const filePath = path.join(keysDir(), `${key.id}.json`);
-  await fs.writeFile(filePath, JSON.stringify(key, null, 2), "utf8");
+  const existing = memoryStore.apiKeys.get(key.userId) ?? [];
+  existing.push(key);
+  memoryStore.apiKeys.set(key.userId, existing);
 }
 
 export async function listApiKeys(userId: string): Promise<Array<Omit<StoredApiKey, "keyEncrypted" | "keyHash">>> {
-  await ensureDirs([keysDir()]);
-  try {
-    const files = await fs.readdir(keysDir());
-    const keys: Array<Omit<StoredApiKey, "keyEncrypted" | "keyHash">> = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      const raw = await fs.readFile(path.join(keysDir(), f), "utf8");
-      const parsed = JSON.parse(raw) as StoredApiKey;
-      if (parsed.userId === userId) {
-        const { keyEncrypted, keyHash, ...safe } = parsed;
-        keys.push(safe);
-      }
-    }
-    return keys.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  } catch {
-    return [];
-  }
+  const keys = memoryStore.apiKeys.get(userId) ?? [];
+  return keys.map(({ keyEncrypted, keyHash, ...safe }) => safe);
 }
 
 export async function validateApiKey(keyHash: string): Promise<StoredApiKey | null> {
-  await ensureDirs([keysDir()]);
-  try {
-    const files = await fs.readdir(keysDir());
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      const raw = await fs.readFile(path.join(keysDir(), f), "utf8");
-      const parsed = JSON.parse(raw) as StoredApiKey;
-      if (parsed.keyHash === keyHash && parsed.isActive) {
-        return parsed;
-      }
-    }
-    return null;
-  } catch {
-    return null;
+  for (const keys of memoryStore.apiKeys.values()) {
+    const found = keys.find((k) => k.keyHash === keyHash && k.isActive);
+    if (found) return found;
   }
+  return null;
+}
+
+// ---- Plugins ----
+
+export async function savePlugin(plugin: any): Promise<void> {
+  const existing = memoryStore.plugins.get(plugin.userId) ?? [];
+  existing.push(plugin);
+  memoryStore.plugins.set(plugin.userId, existing);
+}
+
+export async function listPlugins(userId: string): Promise<any[]> {
+  return memoryStore.plugins.get(userId) ?? [];
 }
